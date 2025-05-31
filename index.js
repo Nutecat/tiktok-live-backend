@@ -4,97 +4,81 @@ const { TikTokLiveConnection } = require('tiktok-live-connector');
 const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
 
-console.log(`✅ WebSocket Server listening on port ${PORT}`);
+console.log(`✅ WebSocket Server escuchando en puerto ${PORT}`);
 
-// Guarda conexiones por usuario de TikTok
-const liveConnections = new Map(); // username -> { conn, clients: Set, filters }
+// Guarda conexiones por username
+const liveConnections = new Map(); // username -> { conn, clients }
 
 wss.on('connection', (ws) => {
-    console.log('📡 Cliente conectado');
+  console.log('📡 Cliente conectado por WebSocket');
 
-    let currentUsername = null;
+  let currentUsername = null;
 
-    ws.on('message', async (msg) => {
-        try {
-            console.log(`📨 Mensaje recibido:`, msg.toString());
-            
-            const data = JSON.parse(msg);
-            const { username, filters } = data;
+  ws.on('message', async (msg) => {
+    try {
+      const data = JSON.parse(msg);
+      const username = data.username;
 
-            if (!username || typeof filters !== 'object') return;
+      if (!username || typeof username !== 'string') {
+        ws.send(JSON.stringify({ error: "Usuario inválido" }));
+        ws.close();
+        return;
+      }
 
-            currentUsername = username;
+      currentUsername = username;
 
-            if (!liveConnections.has(username)) {
-                console.log(`🤝 Creando nueva conexión para @${username}`);
+      if (!liveConnections.has(username)) {
+        console.log(`🤝 Nueva conexión TikTok para @${username}`);
 
-                const conn = new TikTokLiveConnection(username);
-                const clients = new Set([ws]);
+        const conn = new TikTokLiveConnection(username);
+        const clients = new Set([ws]);
 
-                liveConnections.set(username, {
-                    conn,
-                    clients,
-                    filters
-                });
+        liveConnections.set(username, { conn, clients });
 
-                conn.connect().catch(err => {
-                    console.error(`❌ Error al conectar con @${username}:`, err);
-                });
+        conn.connect().catch(err => {
+          console.error(`❌ Error conectando con @${username}:`, err.message);
+        });
 
-                conn.on('chat', (chat) => {
-                    const subs = chat.user.subscriber;
-                    const miembros = chat.user.badges?.some(b => b.type === 'member') || false;
+        conn.on('connected', () => {
+          console.log(`✅ Conectado a TikTok Live de @${username}`);
+        });
 
-                    const payload = {
-                        user: chat.uniqueId,
-                        message: chat.comment,
-                        subscriber: subs,
-                        member: miembros
-                    };
+        conn.on('chat', (chat) => {
+          const payload = {
+            user: chat.uniqueId,
+            message: chat.comment
+          };
 
-                    const group = liveConnections.get(username);
-                    if (!group) return;
+          const group = liveConnections.get(username);
+          if (!group) return;
 
-                    if (shouldReadComment(payload, group.filters)) {
-                        group.clients.forEach(client => {
-                            if (client.readyState === 1) {
-                                client.send(JSON.stringify(payload));
-                            }
-                        });
-                    }
-                });
-
-            } else {
-                // Ya existe conexión para este usuario
-                const group = liveConnections.get(username);
-                group.clients.add(ws);
-                group.filters = filters; // Actualiza filtros en caliente
+          group.clients.forEach(client => {
+            if (client.readyState === 1) {
+              client.send(JSON.stringify(payload));
             }
+          });
+        });
 
-        } catch (err) {
-            console.error("❌ Error procesando mensaje:", err);
-        }
-    });
+      } else {
+        // Ya existe conexión → solo agregar cliente
+        const group = liveConnections.get(username);
+        group.clients.add(ws);
+      }
 
-    ws.on('close', () => {
-        if (currentUsername && liveConnections.has(currentUsername)) {
-            const group = liveConnections.get(currentUsername);
-            group.clients.delete(ws);
-            if (group.clients.size === 0) {
-                console.log(`❎ Cerrando conexión de @${currentUsername}`);
-                group.conn.disconnect();
-                liveConnections.delete(currentUsername);
-            }
-        }
-    });
+    } catch (err) {
+      console.error("❌ Error al procesar mensaje:", err.message);
+    }
+  });
+
+  ws.on('close', () => {
+    if (currentUsername && liveConnections.has(currentUsername)) {
+      const group = liveConnections.get(currentUsername);
+      group.clients.delete(ws);
+      if (group.clients.size === 0) {
+        console.log(`❎ Cerrando conexión TikTok de @${currentUsername}`);
+        group.conn.disconnect();
+        liveConnections.delete(currentUsername);
+      }
+    }
+  });
 });
-
-function shouldReadComment({ subscriber, member }, filters) {
-    const { todos, subs, miembros } = filters;
-
-    if (todos) return true;
-    if (subs && miembros) return subscriber || member;
-    if (subs) return subscriber;
-    if (miembros) return member;
-    return false;
-}
