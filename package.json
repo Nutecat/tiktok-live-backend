@@ -1,0 +1,13 @@
+{
+  "name": "tiktok-live-backend",
+  "version": "1.0.0",
+  "description": "TikTok LIVE to WebSocket backend",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "tiktok-live-connector": "^1.5.4",
+    "ws": "^8.13.0"
+  }
+}
