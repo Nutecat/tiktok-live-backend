@@ -7,7 +7,7 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "tiktok-live-connector": "^1.5.4",
+    "tiktok-live-connector": "^2.0.0",
     "ws": "^8.13.0"
   }
 }
