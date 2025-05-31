@@ -16,6 +16,8 @@ wss.on('connection', (ws) => {
 
     ws.on('message', async (msg) => {
         try {
+            console.log(`📨 Mensaje recibido:`, msg.toString());
+            
             const data = JSON.parse(msg);
             const { username, filters } = data;
 
